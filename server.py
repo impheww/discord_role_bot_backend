@@ -12,6 +12,9 @@ def home():
 # =========================
 def check_angpao(link):
     try:
+        if "?v=" not in link:
+            return {"success": False, "reason": "invalid link"}
+
         voucher_id = link.split("?v=")[-1]
 
         url = f"https://gift.truemoney.com/campaign/vouchers/{voucher_id}/redeem"
@@ -21,14 +24,17 @@ def check_angpao(link):
             "Content-Type": "application/json"
         }
 
-        # ⚠ ใช้เบอร์ test (ต้องมี wallet จริง)
         data = {
             "mobile": "0806084308",  # 🔥 ใส่เบอร์ TrueWallet ของคุณ
             "voucher_hash": voucher_id
         }
 
-        res = requests.post(url, json=data, headers=headers)
-        result = res.json()
+        res = requests.post(url, json=data, headers=headers, timeout=10)
+        print(res.text)
+        try:
+            result = res.json()
+        except ValueError:
+            return {"success": False, "reason": "TrueWallet API ไม่ตอบ JSON"}
 
         print(result)
 
