@@ -95,7 +95,7 @@ def redeem_angpao(link):
 # ================= API =================
 @app.route("/redeem", methods=["POST"])
 def redeem():
-    data = request.json
+    data = request.get_json(silent=True) or {}
     print("🔥 ได้ data จาก bot:", data)
 
     link = data.get("link")
