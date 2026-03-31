@@ -3,11 +3,10 @@ import requests
 import time
 import random
 from threading import Lock
-import re
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
-    pattern = r"^https:\/\/gift\.truemoney\.com\/campaign\/\?v=[a-zA-Z0-9]+$"
-    return re.match(pattern, link) is not None
+    link = link.strip().replace("<", "").replace(">", "")
+    return link.startswith("https://gift.truemoney.com/campaign/?v=")
 # ==========================================
 app = Flask(__name__)
 
@@ -101,7 +100,7 @@ def redeem():
     if not link or not is_valid_truemoney_link(link):
         return jsonify({
             "success": False,
-            "error": "Invalid TrueMoney link"
+            "error": "invalid"
         }), 400
 
     with lock:
