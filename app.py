@@ -96,11 +96,16 @@ def redeem_angpao(link):
 @app.route("/redeem", methods=["POST"])
 def redeem():
     data = request.json
+    print("🔥 ได้ data จาก bot:", data)
+
     link = data.get("link")
     user_id = data.get("user_id")
 
-    if not user_id:
-        return jsonify({"success": False, "error": "Missing user_id"}), 400
+    print("👉 link:", link)
+    print("👉 user_id:", user_id)
+
+    if not link:
+        return jsonify({"status": "error", "message": "no link"}), 400
 
     # 🔒 validate link แน่น
     if not link or not is_valid_truemoney_link(link):
