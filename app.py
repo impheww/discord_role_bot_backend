@@ -6,7 +6,7 @@ from threading import Lock
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
     link = link.strip().replace("<", "").replace(">", "")
-    return link.startswith("https://gift.truemoney.com/campaign/?v=")
+    return "gift.truemoney.com/campaign" in link and "v=" in link
 # ==========================================
 app = Flask(__name__)
 
