@@ -31,15 +31,20 @@ def check_angpao(link):
 
         url = f"https://gift.truemoney.com/campaign/vouchers/{code}/verify"
 
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        res = requests.get(url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://gift.truemoney.com/",
+            "Origin": "https://gift.truemoney.com"
+        }, timeout=10)
 
-        if res.status_code != 200:
-            return {"status": "invalid"}
+        print("STATUS CODE:", res.status_code)
+        print("RAW TEXT:", res.text)
 
         data = res.json()
+        print("TRUEMONEY RESPONSE:", data)
 
         if data["status"]["code"] != "SUCCESS":
-            print("ทรูมันนี่ตอบ:", data)
             return {"status": "invalid"}
 
         voucher = data["data"]["voucher"]
