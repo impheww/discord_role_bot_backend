@@ -2,13 +2,21 @@ from flask import Flask, request, jsonify
 import requests
 import time
 import random
-
+from threading import Lock
+import re
+# ============= LINK PATTERN ==============
+def is_valid_truemoney_link(link: str) -> bool:
+    pattern = r"^https:\/\/gift\.truemoney\.com\/campaign\/\?v=[a-zA-Z0-9]+$"
+    return re.match(pattern, link) is not None
+# ==========================================
 app = Flask(__name__)
 
+used_links = set()
+processing_links = set()
+lock = Lock()
 # ================= CONFIG =================
 WALLET_PHONE = "0806084308"  # 🔴 เบอร์ฉัน
 DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1486698291251904552/WljpcJO_TKgt9bjP7BPB8behkAJD2Bv8E99A5sXCd-H0MZvm1CftIJaxuh5ZzJsHnRq_"
-
 # ================= UTILS =================
 def extract_code(link):
     if "v=" not in link:
@@ -86,39 +94,63 @@ def redeem():
     link = data.get("link")
     user_id = data.get("user_id")
 
+    if not user_id:
+        return jsonify({"success": False, "error": "Missing user_id"}), 400
+
+    # 🔒 validate link แน่น
+    if not link or not is_valid_truemoney_link(link):
+        return jsonify({
+            "success": False,
+            "error": "Invalid TrueMoney link"
+        }), 400
+
+    with lock:
+
+        # ❌ ลิ้งซ้ำ
+        if link in used_links:
+            return jsonify({"success": False, "error": "used"})
+
+        # ❌ กำลังใช้อยู่ (กัน race)
+        if link in processing_links:
+            return jsonify({"success": False, "error": "processing"})
+
+        processing_links.add(link)
+
+    # ===== CHECK =====
     check_result = check_angpao(link)
 
-    # ❌ ลิ้งผิด
     if check_result["status"] == "invalid":
-        return jsonify({"status": "invalid"})
+        processing_links.remove(link)
+        return jsonify({"success": False, "error": "invalid"})
 
-    # ❌ ใช้แล้ว
     if check_result["status"] == "used":
-        return jsonify({"status": "used"})
+        processing_links.remove(link)
+        return jsonify({"success": False, "error": "used"})
 
-    # ✅ พยายาม auto
+    # ===== REDEEM =====
     redeem_result = redeem_angpao(link)
+
+    with lock:
+        processing_links.discard(link)
 
     if redeem_result["success"]:
         amount = redeem_result["amount"]
 
-        requests.post(DISCORD_WEBHOOK, json={
-            "content": f"PAID:{user_id}:{amount}"
-        })
+        with lock:
+            used_links.add(link)
 
         return jsonify({
-            "status": "success",
+            "success": True,
             "amount": amount,
             "auto": True
         })
 
-    # 🟡 fallback
+    # fallback
     return jsonify({
-        "status": "success",
+        "success": True,
         "amount": check_result["amount"],
         "auto": False
     })
-
 # ================= HOME =================
 @app.route("/")
 def home():
