@@ -39,6 +39,7 @@ def check_angpao(link):
         data = res.json()
 
         if data["status"]["code"] != "SUCCESS":
+            print("ทรูมันนี่ตอบ:", data)
             return {"status": "invalid"}
 
         voucher = data["data"]["voucher"]
@@ -119,11 +120,11 @@ def redeem():
     check_result = check_angpao(link)
 
     if check_result["status"] == "invalid":
-        processing_links.remove(link)
+        processing_links.discard(link)
         return jsonify({"success": False, "error": "invalid"})
 
     if check_result["status"] == "used":
-        processing_links.remove(link)
+        processing_links.discard(link)
         return jsonify({"success": False, "error": "used"})
 
     # ===== REDEEM =====
