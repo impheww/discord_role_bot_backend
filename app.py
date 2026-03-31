@@ -107,7 +107,9 @@ def redeem():
     if not link:
         return jsonify({"status": "error", "message": "no link"}), 400
 
-    # 🔒 validate link แน่น
+    print("🔍 VALID:", is_valid_truemoney_link(link))
+    print("🔍 LINK:", link)
+
     if not link or not is_valid_truemoney_link(link):
         return jsonify({
             "success": False,
@@ -128,6 +130,7 @@ def redeem():
 
     # ===== CHECK =====
     check_result = check_angpao(link)
+    print("🔍 CHECK RESULT:", check_result)
 
     if check_result["status"] == "invalid":
         processing_links.discard(link)
