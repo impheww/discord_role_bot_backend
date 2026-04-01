@@ -73,12 +73,27 @@ def redeem_angpao(link):
         }
 
         for _ in range(3):
-            res = requests.post(url, json=payload, headers={
-                "User-Agent": "Mozilla/5.0",
-                "Content-Type": "application/json"
-            })
+            res = requests.post(
+                url,
+                json=payload,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/plain, */*",
+                    "Origin": "https://gift.truemoney.com",
+                    "Referer": "https://gift.truemoney.com/"
+                },
+                timeout=10
+            )
 
-            data = res.json()
+            print("🔍 REDEEM STATUS:", res.status_code)
+            print("🔍 REDEEM TEXT:", res.text)
+
+            try:
+                data = res.json()
+            except ValueError:
+                print("❌ JSON PARSE ERROR:", res.text)
+                return {"success": False}
 
             if data["status"]["code"] == "SUCCESS":
                 return {
