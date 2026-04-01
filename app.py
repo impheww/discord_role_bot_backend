@@ -44,8 +44,9 @@ def check_angpao(link):
         data = res.json()
         print("TRUEMONEY RESPONSE:", data)
 
-        if data["status"]["code"] != "SUCCESS":
-            return {"status": "invalid"}
+        if data.get("status", {}).get("code") != "SUCCESS":
+            print("⚠️ VERIFY ไม่ SUCCESS แต่จะลอง redeem ต่อ")
+            return {"status": "ok", "amount": 0}
 
         voucher = data["data"]["voucher"]
 
@@ -128,18 +129,6 @@ def redeem():
 
         processing_links.add(link)
 
-    # ===== CHECK =====
-    check_result = check_angpao(link)
-    print("🔍 CHECK RESULT:", check_result)
-
-    if check_result["status"] == "invalid":
-        processing_links.discard(link)
-        return jsonify({"success": False, "error": "invalid"})
-
-    if check_result["status"] == "used":
-        processing_links.discard(link)
-        return jsonify({"success": False, "error": "used"})
-
     # ===== REDEEM =====
     redeem_result = redeem_angpao(link)
 
@@ -160,9 +149,8 @@ def redeem():
 
     # fallback
     return jsonify({
-        "success": True,
-        "amount": check_result["amount"],
-        "auto": False
+        "success": False,
+        "error": "redeem_failed"
     })
 # ================= HOME =================
 @app.route("/")
