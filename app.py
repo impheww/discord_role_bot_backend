@@ -20,7 +20,6 @@ def extract_code(link):
     if "v=" not in link:
         return None
     return link.split("v=")[-1]
-
 # ================= CHECK =================
 def check_angpao(link):
     try:
@@ -67,44 +66,39 @@ def redeem_angpao(link):
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
 
-            page.goto(link)
-
+            # 🔥 รอเว็บโหลดจริง
+            page.goto(link, wait_until="networkidle")
             print("🔥 PAGE LOADED")
 
-            # เผื่อมีปุ่มรับซองก่อน
+            # 🔥 เผื่อมีปุ่มก่อน
             try:
                 page.click("text=รับซอง", timeout=5000)
             except PlaywrightTimeoutError:
                 pass
 
-            # 🔥 รอหน้าโหลดเพิ่ม
+            # 🔥 รอเพิ่ม
             page.wait_for_timeout(5000)
 
-            # 🔥 เปลี่ยน selector เป็น input ธรรมดา
+            # 🔥 หา input
             page.wait_for_selector("input", timeout=60000)
             print("🔥 FOUND INPUT")
 
-            # 🔥 กรอกเบอร์
-            page.fill("input", WALLET_PHONE)
+            inputs = page.locator("input")
+            inputs.first.fill(WALLET_PHONE)
 
             # 🔥 กดปุ่ม
             page.get_by_role("button", name="รับซองเลย").click()
 
-            # รอหน้าอั่งเปา
             page.wait_for_timeout(3000)
 
-            # กดซอง
+            # 🔥 กดซอง
             page.click("div[style*='pickup_envelope']")
 
-            # รอรับเงิน
             page.wait_for_timeout(3000)
 
             browser.close()
 
-        return {
-            "success": True,
-            "amount": 0
-        }
+        return {"success": True, "amount": 0}
 
     except Exception as e:
         print("PLAYWRIGHT ERROR:", e)
@@ -144,7 +138,6 @@ def redeem():
             return jsonify({"success": False, "error": "processing"})
 
         processing_links.add(link)
-
     # ===== REDEEM =====
     redeem_result = redeem_angpao(link)
 
@@ -172,7 +165,6 @@ def redeem():
 @app.route("/")
 def home():
     return "Backend is running!"
-
 # ================= RUN =================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
