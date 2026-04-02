@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 from threading import Lock
 from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
     link = link.strip().replace("<", "").replace(">", "")
@@ -68,23 +69,28 @@ def redeem_angpao(link):
             page = browser.new_page()
 
             page.goto(link)
+            # เผื่อมีปุ่มรับซองก่อน
+            try:
+                page.click("text=รับซอง", timeout=5000)
+            except PlaywrightTimeoutError:
+                pass
 
-            # รอ input
-            page.wait_for_selector("input")
+                # รอ input
+            page.wait_for_selector("input[type='tel']", timeout=60000)
 
-            # กรอกเบอร์
-            page.fill("input", WALLET_PHONE)
+                # กรอกเบอร์
+            page.fill("input[type='tel']", WALLET_PHONE)
 
-            # กดปุ่มรับซอง
+                # กดปุ่มรับซอง
             page.get_by_role("button", name="รับซองเลย").click()
 
-            # รอหน้าอั่งเปา
+                # รอหน้าอั่งเปา
             page.wait_for_timeout(3000)
 
-            # กดซอง
+                # กดซอง
             page.click("div[style*='pickup_envelope']")
 
-            # รอรับเงิน
+                # รอรับเงิน
             page.wait_for_timeout(3000)
 
             browser.close()
