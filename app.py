@@ -20,6 +20,7 @@ def extract_code(link):
     if "v=" not in link:
         return None
     return link.split("v=")[-1]
+
 # ================= CHECK =================
 def check_angpao(link):
     try:
@@ -67,7 +68,7 @@ def redeem_angpao(link):
             page = browser.new_page()
 
             # 🔥 รอเว็บโหลดจริง
-            page.goto(link, wait_until="networkidle")
+            page.goto(link, wait_until="domcontentloaded")
             print("🔥 PAGE LOADED")
 
             # 🔥 เผื่อมีปุ่มก่อน
@@ -79,12 +80,19 @@ def redeem_angpao(link):
             # 🔥 รอเพิ่ม
             page.wait_for_timeout(5000)
 
-            # 🔥 หา input
-            page.wait_for_selector("input", timeout=60000)
-            print("🔥 FOUND INPUT")
+            # 🔥 รอให้ DOM โหลด
+            page.wait_for_timeout(8000)
 
-            inputs = page.locator("input")
-            inputs.first.fill(WALLET_PHONE)
+            print("🔥 TRY FILL PHONE")
+
+            # 🔥 ยัดค่าเข้า input โดยตรง (กัน selector fail)
+            page.evaluate(f'''
+            const inputs = document.querySelectorAll("input");
+            if(inputs.length > 0){{
+                inputs[0].value = "{WALLET_PHONE}";
+            }}
+            ''')
+            print("🔥 FILLED PHONE DONE")
 
             # 🔥 กดปุ่ม
             page.get_by_role("button", name="รับซองเลย").click()
@@ -103,6 +111,7 @@ def redeem_angpao(link):
     except Exception as e:
         print("PLAYWRIGHT ERROR:", e)
         return {"success": False}
+
 # ================= API =================
 @app.route("/redeem", methods=["POST"])
 def redeem():
@@ -138,6 +147,7 @@ def redeem():
             return jsonify({"success": False, "error": "processing"})
 
         processing_links.add(link)
+
     # ===== REDEEM =====
     redeem_result = redeem_angpao(link)
 
@@ -165,6 +175,7 @@ def redeem():
 @app.route("/")
 def home():
     return "Backend is running!"
+
 # ================= RUN =================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
