@@ -21,7 +21,6 @@ def extract_code(link):
     if "v=" not in link:
         return None
     return link.split("v=")[-1]
-
 # ================= CHECK =================
 def check_angpao(link):
     try:
@@ -65,7 +64,10 @@ def check_angpao(link):
 def redeem_angpao(link):
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
             page = browser.new_page()
 
             # 🔥 รอเว็บโหลดจริง
@@ -78,21 +80,19 @@ def redeem_angpao(link):
             except PlaywrightTimeoutError:
                 pass
 
-            # 🔥 รอเพิ่ม
-            page.wait_for_timeout(5000)
-
-            # 🔥 รอให้ DOM โหลด
-            page.wait_for_timeout(8000)
+            # ✅ รอแค่พอ
+            page.wait_for_timeout(3000)
 
             print("🔥 TRY FILL PHONE")
 
-            # 🔥 ยัดค่าเข้า input โดยตรง (กัน selector fail)
+            # 🔥 ยัดค่าเข้า input
             page.evaluate(f'''
             const inputs = document.querySelectorAll("input");
             if(inputs.length > 0){{
                 inputs[0].value = "{WALLET_PHONE}";
             }}
             ''')
+
             print("🔥 BACKEND V2 RUNNING")
 
             # 🔥 กดปุ่ม
@@ -101,6 +101,7 @@ def redeem_angpao(link):
             # 🔥 กดซอง
             page.click("div[style*='pickup_envelope']")
 
+            # ✅ รอสุดท้ายพอ
             page.wait_for_timeout(5000)
 
             browser.close()
@@ -110,7 +111,6 @@ def redeem_angpao(link):
     except Exception as e:
         print("PLAYWRIGHT ERROR:", e)
         return {"success": False}
-
 # ================= API =================
 @app.route("/redeem", methods=["POST"])
 def redeem():
@@ -174,7 +174,6 @@ def redeem():
 @app.route("/")
 def home():
     return "Backend is running!"
-
 # ================= RUN =================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
