@@ -61,6 +61,8 @@ def check_angpao(link):
         print("CHECK ERROR:", e)
         return {"status": "invalid"}
 # ================= REDEEM =================
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
 def redeem_angpao(link):
     try:
         with sync_playwright() as p:
@@ -68,67 +70,65 @@ def redeem_angpao(link):
                 headless=True,
                 args=["--no-sandbox", "--disable-dev-shm-usage"]
             )
+
             page = browser.new_page()
 
-            # 🔥 เข้าเว็บ
-            page.goto(link, wait_until="networkidle")
-            print("🔥 PAGE LOADED")
+            print("🔥 OPEN LINK")
+            page.goto(link, wait_until="domcontentloaded", timeout=15000)
 
-            # 🔥 เผื่อมีปุ่มแรก
+            # 🔥 กดปุ่มแรก (ถ้ามี)
             try:
                 page.click("text=รับซอง", timeout=5000)
             except PlaywrightTimeoutError:
-                pass
+                print("❌ ไม่เจอปุ่มแรก")
 
-            # ✅ รอให้ UI ขึ้น
-            page.wait_for_timeout(3000)
+            # ✅ รอ input
+            page.wait_for_selector("input", timeout=10000)
 
-            print("🔥 TRY FILL PHONE")
+            print("🔥 FILL PHONE")
+            page.fill("input", WALLET_PHONE)
 
-            # 🔥 กรอกเบอร์
-            page.evaluate(f'''
-            const inputs = document.querySelectorAll("input");
-            if(inputs.length > 0){{
-                inputs[0].value = "{WALLET_PHONE}";
-            }}
-            ''')
-
-            print("🔥 BACKEND V2 RUNNING")
-
-            # 🔥 รอให้ปุ่มโผล่จริง
-            page.wait_for_timeout(5000)
-
-            # ✅ 🔥 กดปุ่ม "รับซอง" ด้วย JS (แทน locator)
+            # 🔥 กดปุ่มรับซอง
             page.evaluate("""
             const btn = Array.from(document.querySelectorAll("button"))
                 .find(b => b.innerText.includes("รับซอง"));
             if (btn) btn.click();
             """)
 
-            print("🔥 CLICKED RECEIVE BUTTON")
+            print("🔥 CLICK RECEIVE")
 
-            # 🔥 รอ animation
             page.wait_for_timeout(3000)
 
-            # ✅ 🔥 กดซองด้วย JS
+            # 🔥 กดซอง
             page.evaluate("""
             const div = Array.from(document.querySelectorAll("div"))
                 .find(d => d.style.backgroundImage && d.style.backgroundImage.includes("pickup_envelope"));
             if (div) div.click();
             """)
 
-            print("🔥 CLICKED ENVELOPE")
+            print("🔥 CLICK ENVELOPE")
 
-            # ✅ รอให้เสร็จ
             page.wait_for_timeout(5000)
+
+            amount = page.evaluate("""
+            () => {
+                const text = document.body.innerText;
+                const match = text.match(/\\d+(\\.\\d+)?/);
+                return match ? parseFloat(match[0]) : 0;
+            }
+            """)
 
             browser.close()
 
-        return {"success": True, "amount": 0}
+        return {"success": True, "amount": amount}
+
+    except PlaywrightTimeoutError:
+        print("TIMEOUT ERROR")
+        return {"success": False, "error": "timeout"}
 
     except Exception as e:
-        print("PLAYWRIGHT ERROR:", e)
-        return {"success": False}
+        print("UNKNOWN ERROR:", e)
+        return {"success": False, "error": str(e)}
 # ================= API =================
 @app.route("/redeem", methods=["POST"])
 def redeem():
