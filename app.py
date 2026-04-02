@@ -69,7 +69,7 @@ def redeem_angpao(link):
             page = browser.new_page()
 
             # 🔥 รอเว็บโหลดจริง
-            page.goto(link, wait_until="domcontentloaded")
+            page.goto(link, wait_until="networkidle")
             print("🔥 PAGE LOADED")
 
             # 🔥 เผื่อมีปุ่มก่อน
@@ -98,12 +98,10 @@ def redeem_angpao(link):
             # 🔥 กดปุ่ม
             page.get_by_role("button", name="รับซองเลย").click()
 
-            page.wait_for_timeout(3000)
-
             # 🔥 กดซอง
             page.click("div[style*='pickup_envelope']")
 
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(5000)
 
             browser.close()
 
