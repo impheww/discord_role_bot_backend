@@ -1,8 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
-import time
-import random
 from threading import Lock
+from playwright.sync_api import sync_playwright
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
     link = link.strip().replace("<", "").replace(">", "")
@@ -64,49 +63,39 @@ def check_angpao(link):
 # ================= REDEEM =================
 def redeem_angpao(link):
     try:
-        code = extract_code(link)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
 
-        url = f"https://gift.truemoney.com/campaign/vouchers/{code}/redeem"
+            page.goto(link)
 
-        payload = {
-            "mobile": WALLET_PHONE
+            # รอ input
+            page.wait_for_selector("input")
+
+            # กรอกเบอร์
+            page.fill("input", WALLET_PHONE)
+
+            # กดปุ่มรับซอง
+            page.get_by_role("button", name="รับซองเลย").click()
+
+            # รอหน้าอั่งเปา
+            page.wait_for_timeout(3000)
+
+            # กดซอง
+            page.click("div[style*='pickup_envelope']")
+
+            # รอรับเงิน
+            page.wait_for_timeout(3000)
+
+            browser.close()
+
+        return {
+            "success": True,
+            "amount": 0  # ⚠️ ยังไม่ดึงเงินจริง (optional)
         }
 
-        for _ in range(3):
-            res = requests.post(
-                url,
-                json=payload,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/plain, */*",
-                    "Origin": "https://gift.truemoney.com",
-                    "Referer": "https://gift.truemoney.com/"
-                },
-                timeout=10
-            )
-
-            print("🔍 REDEEM STATUS:", res.status_code)
-            print("🔍 REDEEM TEXT:", res.text)
-
-            try:
-                data = res.json()
-            except ValueError:
-                print("❌ JSON PARSE ERROR:", res.text)
-                return {"success": False}
-
-            if data["status"]["code"] == "SUCCESS":
-                return {
-                    "success": True,
-                    "amount": float(data["data"]["voucher"]["amount_baht"])
-                }
-
-            time.sleep(random.uniform(1, 2))
-
-        return {"success": False}
-
     except Exception as e:
-        print("REDEEM ERROR:", e)
+        print("PLAYWRIGHT ERROR:", e)
         return {"success": False}
 # ================= API =================
 @app.route("/redeem", methods=["POST"])
