@@ -61,8 +61,6 @@ def check_angpao(link):
         print("CHECK ERROR:", e)
         return {"status": "invalid"}
 # ================= REDEEM =================
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-
 def redeem_angpao(link):
     try:
         with sync_playwright() as p:
@@ -71,64 +69,97 @@ def redeem_angpao(link):
                 args=["--no-sandbox", "--disable-dev-shm-usage"]
             )
 
-            page = browser.new_page()
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+            )
 
             print("🔥 OPEN LINK")
-            page.goto(link, wait_until="domcontentloaded", timeout=15000)
+            page.goto(link, wait_until="networkidle", timeout=20000)
 
-            # 🔥 กดปุ่มแรก (ถ้ามี)
+            page.screenshot(path="debug_open.png")
+
+            # ✅ รอปุ่มขึ้นก่อน
             try:
-                page.click("text=รับซอง", timeout=5000)
+                page.wait_for_selector("button", timeout=10000)
             except PlaywrightTimeoutError:
-                print("❌ ไม่เจอปุ่มแรก")
+                print("❌ ไม่มีปุ่มในหน้า")
+                return {"success": False, "error": "no_button"}
+
+            # 🔍 หา "รับซอง"
+            buttons = page.query_selector_all("button")
+            clicked = False
+
+            for btn in buttons:
+                try:
+                    text = btn.inner_text()
+                    if "รับซอง" in text:
+                        btn.click()
+                        print("✅ คลิกปุ่มรับซองแล้ว")
+                        clicked = True
+                        break
+                except Exception as e:
+                    print("skip btn:", e)
+
+            if not clicked:
+                print("❌ ไม่เจอปุ่มรับซอง")
+                page.screenshot(path="debug_no_button.png")
+                return {"success": False, "error": "no_button"}
 
             # ✅ รอ input
-            page.wait_for_selector("input", timeout=10000)
+            try:
+                page.wait_for_selector("input", timeout=10000)
+            except PlaywrightTimeoutError:
+                print("❌ ไม่เจอ input")
+                return {"success": False, "error": "no_input"}
 
             print("🔥 FILL PHONE")
             page.fill("input", WALLET_PHONE)
 
-            # 🔥 กดปุ่มรับซอง
-            page.evaluate("""
-            const btn = Array.from(document.querySelectorAll("button"))
-                .find(b => b.innerText.includes("รับซอง"));
-            if (btn) btn.click();
-            """)
+            # 🔘 กดปุ่มยืนยัน
+            buttons = page.query_selector_all("button")
+            confirm_clicked = False
 
-            print("🔥 CLICK RECEIVE")
+            for btn in buttons:
+                try:
+                    text = btn.inner_text()
+                    if "รับเงิน" in text or "ยืนยัน" in text:
+                        btn.click()
+                        print("✅ กดยืนยันแล้ว")
+                        confirm_clicked = True
+                        break
+                except Exception as e:
+                    print("skip btn error:", e)
+                    pass
 
-            page.wait_for_timeout(3000)
-
-            # 🔥 กดซอง
-            page.evaluate("""
-            const div = Array.from(document.querySelectorAll("div"))
-                .find(d => d.style.backgroundImage && d.style.backgroundImage.includes("pickup_envelope"));
-            if (div) div.click();
-            """)
-
-            print("🔥 CLICK ENVELOPE")
+            if not confirm_clicked:
+                print("❌ ไม่เจอปุ่มยืนยัน")
+                return {"success": False, "error": "no_confirm"}
 
             page.wait_for_timeout(5000)
 
-            amount = page.evaluate("""
-            () => {
-                const text = document.body.innerText;
-                const match = text.match(/\\d+(\\.\\d+)?/);
-                return match ? parseFloat(match[0]) : 0;
-            }
-            """)
+            content = page.content()
 
-            browser.close()
+            # 🔍 ตรวจผล
+            if "รับเงินสำเร็จ" in content:
+                return {"success": True}
 
-        return {"success": True, "amount": amount}
+            if "ใช้ไปแล้ว" in content:
+                return {"success": False, "error": "already_used"}
+
+            if "หมดอายุ" in content:
+                return {"success": False, "error": "expired"}
+
+            print("❌ UNKNOWN RESULT")
+            page.screenshot(path="debug_unknown.png")
+            return {"success": False, "error": "unknown"}
 
     except PlaywrightTimeoutError:
         print("TIMEOUT ERROR")
         return {"success": False, "error": "timeout"}
 
     except Exception as e:
-        print("UNKNOWN ERROR:", e)
-        return {"success": False, "error": str(e)}
+        print("ERROR:", e)
+        return {"success": False, "error": "exception"}
 # ================= API =================
 @app.route("/redeem", methods=["POST"])
 def redeem():
@@ -172,7 +203,7 @@ def redeem():
         processing_links.discard(link)
 
     if redeem_result["success"]:
-        amount = redeem_result["amount"]
+        amount = redeem_result.get("amount", 0)
 
         with lock:
             used_links.add(link)
@@ -184,10 +215,7 @@ def redeem():
         })
 
     # fallback
-    return jsonify({
-        "success": False,
-        "error": "redeem_failed"
-    })
+    return jsonify(redeem_result)
 # ================= HOME =================
 @app.route("/")
 def home():
