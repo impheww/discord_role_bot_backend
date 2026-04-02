@@ -69,35 +69,42 @@ def redeem_angpao(link):
             page = browser.new_page()
 
             page.goto(link)
+
+            print("🔥 PAGE LOADED")
+
             # เผื่อมีปุ่มรับซองก่อน
             try:
                 page.click("text=รับซอง", timeout=5000)
             except PlaywrightTimeoutError:
                 pass
 
-                # รอ input
-            page.wait_for_selector("input[type='tel']", timeout=60000)
+            # 🔥 รอหน้าโหลดเพิ่ม
+            page.wait_for_timeout(5000)
 
-                # กรอกเบอร์
-            page.fill("input[type='tel']", WALLET_PHONE)
+            # 🔥 เปลี่ยน selector เป็น input ธรรมดา
+            page.wait_for_selector("input", timeout=60000)
+            print("🔥 FOUND INPUT")
 
-                # กดปุ่มรับซอง
+            # 🔥 กรอกเบอร์
+            page.fill("input", WALLET_PHONE)
+
+            # 🔥 กดปุ่ม
             page.get_by_role("button", name="รับซองเลย").click()
 
-                # รอหน้าอั่งเปา
+            # รอหน้าอั่งเปา
             page.wait_for_timeout(3000)
 
-                # กดซอง
+            # กดซอง
             page.click("div[style*='pickup_envelope']")
 
-                # รอรับเงิน
+            # รอรับเงิน
             page.wait_for_timeout(3000)
 
             browser.close()
 
         return {
             "success": True,
-            "amount": 0  # ⚠️ ยังไม่ดึงเงินจริง (optional)
+            "amount": 0
         }
 
     except Exception as e:
