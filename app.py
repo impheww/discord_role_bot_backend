@@ -92,7 +92,7 @@ def redeem_angpao(link):
                 inputs[0].value = "{WALLET_PHONE}";
             }}
             ''')
-            print("🔥 FILLED PHONE DONE")
+            print("🔥 BACKEND V2 RUNNING")
 
             # 🔥 กดปุ่ม
             page.get_by_role("button", name="รับซองเลย").click()
