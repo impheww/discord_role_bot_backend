@@ -115,27 +115,47 @@ def redeem_angpao(link):
             print("🔥 FILL PHONE")
             page.fill("input", WALLET_PHONE)
 
-            # 🔘 กดปุ่มยืนยัน
+            # 🔘 กดปุ่มยืนยัน (เวอร์ชันเทพ)
             buttons = page.query_selector_all("button")
             confirm_clicked = False
 
             for btn in buttons:
                 try:
-                    text = btn.inner_text()
-                    if "รับเงิน" in text or "ยืนยัน" in text:
+                    text = btn.inner_text().strip()
+                    print("🔍 BUTTON:", text)
+
+                    if any(word in text for word in [
+                        "รับเงิน", "ยืนยัน", "ตกลง", "ถัดไป", "continue", "รับซอง"
+                    ]):
                         btn.click()
-                        print("✅ กดยืนยันแล้ว")
+                        print("✅ กดยืนยันแล้ว:", text)
                         confirm_clicked = True
                         break
+
                 except Exception as e:
-                    print("skip btn error:", e)
-                    pass
+                    print("skip confirm btn:", e)
+
+            # 🔥 fallback (สำคัญมาก)
+            if not confirm_clicked:
+                print("⚠️ ลองกดปุ่มตัวแรกแทน")
+
+                try:
+                    buttons[0].click()
+                    confirm_clicked = True
+                    print("✅ fallback: กดปุ่มแรกสำเร็จ")
+                except Exception as e:
+                    print("❌ fallback fail:", e)
 
             if not confirm_clicked:
                 print("❌ ไม่เจอปุ่มยืนยัน")
                 return {"success": False, "error": "no_confirm"}
 
             page.wait_for_timeout(5000)
+
+            page.screenshot(path="debug_after_confirm.png")
+
+            print("📄 PAGE CONTENT:")
+            print(page.content()[:1000])
 
             content = page.content()
 
