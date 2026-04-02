@@ -95,11 +95,17 @@ def redeem_angpao(link):
 
             print("🔥 BACKEND V2 RUNNING")
 
-            # 🔥 กดปุ่ม
-            page.get_by_role("button", name="รับซองเลย").click()
+            # 🔥 กดปุ่ม (แก้แล้ว)
+            try:
+                page.locator("button:has-text('รับซอง')").click(timeout=10000)
+            except Exception as e:
+                print("❌ CLICK BUTTON FAILED:", e)
 
             # 🔥 กดซอง
-            page.click("div[style*='pickup_envelope']")
+            try:
+                page.locator("div[style*='pickup_envelope']").click(timeout=5000)
+            except Exception as e:
+                print("❌ CLICK ENVELOPE FAILED:", e)
 
             # ✅ รอสุดท้ายพอ
             page.wait_for_timeout(5000)
