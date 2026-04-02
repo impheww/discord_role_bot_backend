@@ -70,22 +70,22 @@ def redeem_angpao(link):
             )
             page = browser.new_page()
 
-            # 🔥 รอเว็บโหลดจริง
+            # 🔥 เข้าเว็บ
             page.goto(link, wait_until="networkidle")
             print("🔥 PAGE LOADED")
 
-            # 🔥 เผื่อมีปุ่มก่อน
+            # 🔥 เผื่อมีปุ่มแรก
             try:
                 page.click("text=รับซอง", timeout=5000)
             except PlaywrightTimeoutError:
                 pass
 
-            # ✅ รอแค่พอ
+            # ✅ รอให้ UI ขึ้น
             page.wait_for_timeout(3000)
 
             print("🔥 TRY FILL PHONE")
 
-            # 🔥 ยัดค่าเข้า input
+            # 🔥 กรอกเบอร์
             page.evaluate(f'''
             const inputs = document.querySelectorAll("input");
             if(inputs.length > 0){{
@@ -95,19 +95,31 @@ def redeem_angpao(link):
 
             print("🔥 BACKEND V2 RUNNING")
 
-            # 🔥 กดปุ่ม (แก้แล้ว)
-            try:
-                page.locator("button:has-text('รับซอง')").click(timeout=10000)
-            except Exception as e:
-                print("❌ CLICK BUTTON FAILED:", e)
+            # 🔥 รอให้ปุ่มโผล่จริง
+            page.wait_for_timeout(5000)
 
-            # 🔥 กดซอง
-            try:
-                page.locator("div[style*='pickup_envelope']").click(timeout=5000)
-            except Exception as e:
-                print("❌ CLICK ENVELOPE FAILED:", e)
+            # ✅ 🔥 กดปุ่ม "รับซอง" ด้วย JS (แทน locator)
+            page.evaluate("""
+            const btn = Array.from(document.querySelectorAll("button"))
+                .find(b => b.innerText.includes("รับซอง"));
+            if (btn) btn.click();
+            """)
 
-            # ✅ รอสุดท้ายพอ
+            print("🔥 CLICKED RECEIVE BUTTON")
+
+            # 🔥 รอ animation
+            page.wait_for_timeout(3000)
+
+            # ✅ 🔥 กดซองด้วย JS
+            page.evaluate("""
+            const div = Array.from(document.querySelectorAll("div"))
+                .find(d => d.style.backgroundImage && d.style.backgroundImage.includes("pickup_envelope"));
+            if (div) div.click();
+            """)
+
+            print("🔥 CLICKED ENVELOPE")
+
+            # ✅ รอให้เสร็จ
             page.wait_for_timeout(5000)
 
             browser.close()
