@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 import requests
 from threading import Lock
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Error as PlaywrightError
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
     link = link.strip().replace("<", "").replace(">", "")
@@ -73,31 +74,25 @@ def redeem_angpao(link):
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
             )
 
+            # 🔥 debug network (fix warning ด้วย type ignore)
+            page.on("response", lambda r: print("📡", getattr(r, "status", "?"), r.url))  # type: ignore
+
             print("🔥 OPEN LINK")
             page.goto(link, wait_until="domcontentloaded", timeout=20000)
-
             page.wait_for_selector("body", timeout=10000)
 
             # 🔍 หา "รับซอง"
-            clicked = False
-
             try:
                 page.locator("text=รับซอง").first.click(timeout=10000)
                 print("✅ คลิกปุ่มรับซองแล้ว")
-                clicked = True
             except PlaywrightTimeoutError:
                 print("❌ หา 'รับซอง' ไม่เจอ")
-
-            if not clicked:
-                page.screenshot(path="debug_no_button.png")
-                print("📄 PAGE:", page.inner_text("body")[:500])
                 return {"success": False, "error": "no_button"}
 
             # ✅ รอ input
             try:
                 page.wait_for_selector("input", timeout=10000)
             except PlaywrightTimeoutError:
-                print("❌ ไม่เจอ input")
                 return {"success": False, "error": "no_input"}
 
             print("🔥 FILL PHONE")
@@ -105,6 +100,7 @@ def redeem_angpao(link):
 
             # 🔘 กดยืนยัน
             buttons = page.query_selector_all("button")
+
             confirm_clicked = False
 
             for btn in buttons:
@@ -119,56 +115,46 @@ def redeem_angpao(link):
                         print("✅ กดยืนยันแล้ว:", text)
                         confirm_clicked = True
                         break
+                except PlaywrightError:
+                    continue
 
-                except Exception as e:
-                    print("skip confirm btn error:", e)
-
-            # 🔥 fallback
             if not confirm_clicked:
                 try:
                     buttons[0].click()
-                    confirm_clicked = True
                     print("✅ fallback: กดปุ่มแรก")
-                except IndexError:
-                    print("❌ ไม่มีปุ่มให้ fallback")
-                except Exception as e:
-                    print("❌ fallback error:", e)
+                except PlaywrightError:
+                    return {"success": False, "error": "no_confirm"}
 
-            if not confirm_clicked:
-                return {"success": False, "error": "no_confirm"}
+            # 🔥 กัน race condition
+            page.wait_for_timeout(1000)
+
             # =====================================
-            # 🔥 fallback รอ modal/text หลัง confirm
+            # 🔥 ดัก network response
             # =====================================
             try:
-                page.wait_for_selector("div[role=dialog] >> text=สำเร็จ", timeout=10000)
-                print("✅ พบ modal สำเร็จ")
-            except PlaywrightTimeoutError:
-                print("⚠️ ไม่พบ modal, จะตรวจผลจาก page.inner_text แทน")
+                print("⏳ รอ network response...")
 
-            # =====================================
-            # 🔥 รอผลลัพธ์จาก API จริง
-            # =====================================
-            try:
-                print("⏳ กดปุ่มแล้ว รอ network response...")
-
-                # จับ response API ของ TrueMoney หลังกดปุ่มยืนยัน
                 with page.expect_response(
-                        lambda resp: "vouchers" in resp.url and resp.status == 200,  # partial match เฉพาะ path ที่ชัวร์
-                        timeout=45000
+                    lambda r: (
+                        ("redeem" in r.url or "voucher" in r.url)
+                        and getattr(r, "status", 0) == 200
+                    ),
+                    timeout=60000
                 ) as resp_info:
-                    # กดยืนยัน (button ที่เจอก่อนหน้านี้)
-                    if not confirm_clicked:
-                        page.locator("text=รับซองเลย").first.click()
-                redeem_resp = resp_info.value
-                data = redeem_resp.json()
-                print("✅ REDEEM RESPONSE:", data)
+                    pass
 
-                # วิเคราะห์ผล
+                response = resp_info.value
+                data = response.json()
+                print("✅ API:", data)
+
                 status = data.get("status", {}).get("code", "")
                 voucher = data.get("data", {}).get("voucher", {})
 
                 if status == "SUCCESS" and voucher.get("status") == "REDEEMED":
-                    return {"success": True, "amount": float(voucher.get("amount_baht", 0))}
+                    return {
+                        "success": True,
+                        "amount": float(voucher.get("amount_baht", 0))
+                    }
 
                 elif voucher.get("status") == "EXPIRED":
                     return {"success": False, "error": "expired"}
@@ -180,14 +166,37 @@ def redeem_angpao(link):
                     return {"success": False, "error": "unknown"}
 
             except PlaywrightTimeoutError:
-                print("⚠️ รอ network response timeout")
-                return {"success": False, "error": "timeout"}
-            except Exception as e:
-                print("❌ REDEEM ERROR:", e)
-                return {"success": False, "error": "exception"}
+                print("⚠️ API timeout → fallback DOM")
+
+                # 🔥 fallback DOM
+                try:
+                    page.wait_for_function("""
+                        () => {
+                            const t = document.body.innerText;
+                            return t.includes('สำเร็จ') || 
+                                   t.includes('หมดอายุ') || 
+                                   t.includes('ใช้ไปแล้ว');
+                        }
+                    """, timeout=15000)
+
+                    content = page.inner_text("body")
+
+                    if "สำเร็จ" in content:
+                        return {"success": True, "amount": 0}
+
+                    elif "หมดอายุ" in content:
+                        return {"success": False, "error": "expired"}
+
+                    elif "ใช้ไปแล้ว" in content:
+                        return {"success": False, "error": "already_used"}
+
+                    else:
+                        return {"success": False, "error": "unknown"}
+
+                except PlaywrightError:
+                    return {"success": False, "error": "timeout"}
 
     except PlaywrightTimeoutError:
-        print("TIMEOUT ERROR")
         return {"success": False, "error": "timeout"}
 
     except Exception as e:
