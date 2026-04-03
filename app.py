@@ -85,6 +85,14 @@ def redeem_angpao(link):
             try:
                 page.locator("text=รับซอง").first.click(timeout=10000)
                 print("✅ คลิกปุ่มรับซองแล้ว")
+                # 🔥 กรอกเบอร์โทร
+                try:
+                    phone_input = page.wait_for_selector("input[type='tel']", timeout=5000)
+                    phone_input.fill(WALLET_PHONE)
+                    print("📱 กรอกเบอร์แล้ว:", WALLET_PHONE)
+                except PlaywrightError:
+                    print("❌ ไม่พบช่องกรอกเบอร์")
+                    return {"success": False, "error": "no_input"}
             except PlaywrightTimeoutError:
                 print("❌ หา 'รับซอง' ไม่เจอ")
                 return {"success": False, "error": "no_button"}
