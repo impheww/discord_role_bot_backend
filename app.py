@@ -144,8 +144,10 @@ def redeem_angpao(link):
                 print("⏳ กดปุ่มแล้ว รอ network response...")
 
                 # จับ response API ของ TrueMoney หลังกดปุ่มยืนยัน
-                with page.expect_response(lambda resp: "voucher/redeem" in resp.url and resp.status == 200,
-                                          timeout=15000) as resp_info:
+                with page.expect_response(
+                        lambda resp: "voucher/redeem" in resp.url and resp.request.method == "POST",
+                        timeout=30000
+                ) as resp_info:
                     # กดยืนยัน (button ที่เจอก่อนหน้านี้)
                     if not confirm_clicked:
                         page.locator("text=รับซองเลย").first.click()
