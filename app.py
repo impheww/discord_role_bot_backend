@@ -79,23 +79,18 @@ def redeem_angpao(link):
             page.wait_for_selector("body", timeout=10000)
 
             # 🔍 หา "รับซอง"
-            buttons = page.query_selector_all("button")
             clicked = False
 
-            for btn in buttons:
-                try:
-                    text = btn.inner_text()
-                    if "รับซอง" in text:
-                        btn.click()
-                        print("✅ คลิกปุ่มรับซองแล้ว")
-                        clicked = True
-                        break
-                except Exception as e:
-                    print("skip btn error:", e)
+            try:
+                page.locator("text=รับซอง").first.click(timeout=10000)
+                print("✅ คลิกปุ่มรับซองแล้ว")
+                clicked = True
+            except PlaywrightTimeoutError:
+                print("❌ หา 'รับซอง' ไม่เจอ")
 
             if not clicked:
-                print("❌ ไม่เจอปุ่มรับซอง")
                 page.screenshot(path="debug_no_button.png")
+                print("📄 PAGE:", page.inner_text("body")[:500])
                 return {"success": False, "error": "no_button"}
 
             # ✅ รอ input
