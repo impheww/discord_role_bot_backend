@@ -74,16 +74,9 @@ def redeem_angpao(link):
             )
 
             print("🔥 OPEN LINK")
-            page.goto(link, wait_until="networkidle", timeout=20000)
+            page.goto(link, wait_until="domcontentloaded", timeout=20000)
 
-            page.screenshot(path="debug_open.png")
-
-            # ✅ รอปุ่มขึ้นก่อน
-            try:
-                page.wait_for_selector("button", timeout=10000)
-            except PlaywrightTimeoutError:
-                print("❌ ไม่มีปุ่มในหน้า")
-                return {"success": False, "error": "no_button"}
+            page.wait_for_selector("body", timeout=10000)
 
             # 🔍 หา "รับซอง"
             buttons = page.query_selector_all("button")
@@ -98,7 +91,7 @@ def redeem_angpao(link):
                         clicked = True
                         break
                 except Exception as e:
-                    print("skip btn:", e)
+                    print("skip btn error:", e)
 
             if not clicked:
                 print("❌ ไม่เจอปุ่มรับซอง")
@@ -115,7 +108,7 @@ def redeem_angpao(link):
             print("🔥 FILL PHONE")
             page.fill("input", WALLET_PHONE)
 
-            # 🔘 กดปุ่มยืนยัน (เวอร์ชันเทพ)
+            # 🔘 กดยืนยัน
             buttons = page.query_selector_all("button")
             confirm_clicked = False
 
@@ -133,34 +126,46 @@ def redeem_angpao(link):
                         break
 
                 except Exception as e:
-                    print("skip confirm btn:", e)
+                    print("skip confirm btn error:", e)
 
-            # 🔥 fallback (สำคัญมาก)
+            # 🔥 fallback
             if not confirm_clicked:
-                print("⚠️ ลองกดปุ่มตัวแรกแทน")
-
                 try:
                     buttons[0].click()
                     confirm_clicked = True
-                    print("✅ fallback: กดปุ่มแรกสำเร็จ")
+                    print("✅ fallback: กดปุ่มแรก")
+                except IndexError:
+                    print("❌ ไม่มีปุ่มให้ fallback")
                 except Exception as e:
-                    print("❌ fallback fail:", e)
+                    print("❌ fallback error:", e)
 
             if not confirm_clicked:
-                print("❌ ไม่เจอปุ่มยืนยัน")
                 return {"success": False, "error": "no_confirm"}
 
-            page.wait_for_timeout(5000)
+            # =====================================
+            # 🔥 รอผลลัพธ์ React
+            # =====================================
+            try:
+                print("⏳ รอผลลัพธ์...")
 
-            page.screenshot(path="debug_after_confirm.png")
+                page.wait_for_function("""
+                () => {
+                    const text = document.body.innerText;
+                    return text.includes('สำเร็จ') ||
+                           text.includes('ใช้ไปแล้ว') ||
+                           text.includes('หมดอายุ') ||
+                           text.includes('กรุณาลองใหม่');
+                }
+                """, timeout=10000)
 
-            print("📄 PAGE CONTENT:")
-            print(page.content()[:1000])
+            except PlaywrightTimeoutError:
+                print("⚠️ รอผลลัพธ์ไม่ทัน")
 
-            content = page.content()
+            content = page.inner_text("body")
+            print("📄 RESULT TEXT:", content[:500])
 
             # 🔍 ตรวจผล
-            if "รับเงินสำเร็จ" in content:
+            if "สำเร็จ" in content:
                 return {"success": True}
 
             if "ใช้ไปแล้ว" in content:
