@@ -138,40 +138,43 @@ def redeem_angpao(link):
                 return {"success": False, "error": "no_confirm"}
 
             # =====================================
-            # 🔥 รอผลลัพธ์ React
+            # 🔥 รอผลลัพธ์จาก API จริง
             # =====================================
             try:
-                print("⏳ รอผลลัพธ์...")
+                print("⏳ กดปุ่มแล้ว รอ network response...")
 
-                page.wait_for_function("""
-                () => {
-                    const text = document.body.innerText;
-                    return text.includes('สำเร็จ') ||
-                           text.includes('ใช้ไปแล้ว') ||
-                           text.includes('หมดอายุ') ||
-                           text.includes('กรุณาลองใหม่');
-                }
-                """, timeout=10000)
+                # จับ response API ของ TrueMoney หลังกดปุ่มยืนยัน
+                with page.expect_response(lambda resp: "voucher/redeem" in resp.url and resp.status == 200,
+                                          timeout=15000) as resp_info:
+                    # กดยืนยัน (button ที่เจอก่อนหน้านี้)
+                    if not confirm_clicked:
+                        page.locator("text=รับซองเลย").first.click()
+                redeem_resp = resp_info.value
+                data = redeem_resp.json()
+                print("✅ REDEEM RESPONSE:", data)
+
+                # วิเคราะห์ผล
+                status = data.get("status", {}).get("code", "")
+                voucher = data.get("data", {}).get("voucher", {})
+
+                if status == "SUCCESS" and voucher.get("status") == "REDEEMED":
+                    return {"success": True, "amount": float(voucher.get("amount_baht", 0))}
+
+                elif voucher.get("status") == "EXPIRED":
+                    return {"success": False, "error": "expired"}
+
+                elif voucher.get("status") == "REDEEMED":
+                    return {"success": False, "error": "already_used"}
+
+                else:
+                    return {"success": False, "error": "unknown"}
 
             except PlaywrightTimeoutError:
-                print("⚠️ รอผลลัพธ์ไม่ทัน")
-
-            content = page.inner_text("body")
-            print("📄 RESULT TEXT:", content[:500])
-
-            # 🔍 ตรวจผล
-            if "สำเร็จ" in content:
-                return {"success": True}
-
-            if "ใช้ไปแล้ว" in content:
-                return {"success": False, "error": "already_used"}
-
-            if "หมดอายุ" in content:
-                return {"success": False, "error": "expired"}
-
-            print("❌ UNKNOWN RESULT")
-            page.screenshot(path="debug_unknown.png")
-            return {"success": False, "error": "unknown"}
+                print("⚠️ รอ network response timeout")
+                return {"success": False, "error": "timeout"}
+            except Exception as e:
+                print("❌ REDEEM ERROR:", e)
+                return {"success": False, "error": "exception"}
 
     except PlaywrightTimeoutError:
         print("TIMEOUT ERROR")
