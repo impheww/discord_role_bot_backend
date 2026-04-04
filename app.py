@@ -192,11 +192,19 @@ def redeem_angpao(link):
                 buttons = page.locator("button")
                 for i in range(buttons.count()):
                     btn = buttons.nth(i)
-                    if btn.is_visible() and btn.is_enabled():
-                        btn.click()
-                        print(f"✅ confirm via button {i} | text={btn.text_content()}")
-                        clicked = True
-                        break
+                    text = btn.text_content() or ""
+
+                    # ❌ ห้ามกดปุ่มเดิม
+                    if "รับซอง" in text:
+                        continue
+
+                    # ✅ เอาเฉพาะ confirm
+                    if any(k in text.lower() for k in ["ยืนยัน", "รับเงิน", "continue", "ตกลง"]):
+                        if btn.is_visible() and btn.is_enabled():
+                            btn.click()
+                            print(f"✅ confirm via button {i} | text={text}")
+                            clicked = True
+                            break
 
             # 🔥 3. div ใหญ่ (fallback)
             if not clicked:
@@ -207,6 +215,9 @@ def redeem_angpao(link):
                     if el.is_visible():
                         box = el.bounding_box()
                         if box and box["width"] > 100 and box["height"] > 40:
+                            text = el.text_content() or ""
+                            if "รับซอง" in text:
+                                continue
                             el.click()
                             print(f"⚠️ confirm via div {i}")
                             clicked = True
