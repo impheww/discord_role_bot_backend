@@ -121,10 +121,31 @@ def redeem_angpao(link):
             # 🔥 CLICK "รับซอง"
             # =========================
             try:
-                page.get_by_role("button", name=re.compile("รับซอง", re.I)).click(timeout=10000)
+                # 🔥 รอให้ UI โผล่มาก่อน
+                page.wait_for_timeout(3000)
+
+                # 🔍 debug
+                buttons = page.locator("button")
+                print("🔍 BUTTON COUNT:", buttons.count())
+
+                # 🔥 หาแบบยืดหยุ่น
+                btn = page.get_by_role("button").filter(
+                    has_text=re.compile("รับ|ซอง|gift|open", re.I)
+                ).first
+
+                btn.click(timeout=10000)
                 print("✅ คลิกปุ่มรับซองแล้ว")
+
             except PlaywrightTimeoutError:
-                return {"success": False, "error": "no_button"}
+                print("❌ หา button ไม่เจอ → fallback")
+
+                # 🔥 fallback 1: กดปุ่มแรก
+                try:
+                    page.locator("button").first.click()
+                    print("⚠️ fallback: กดปุ่มแรก")
+                except Exception as e:
+                    print("💀 fallback ก็พัง:", e)
+                    return {"success": False, "error": "no_button"}
 
             # =========================
             # 🔥 WAIT INPUT (สำคัญสุด)
