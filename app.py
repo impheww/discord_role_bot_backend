@@ -142,6 +142,7 @@ def redeem_angpao(link):
                     print("❌ ไม่เจอปุ่มรับซองจริงๆ")
                     return {"success": False, "error": "no_button"}
                 print("✅ clicked รับซอง")
+                page.wait_for_selector("input", timeout=15000)
 
             except Exception as e:
                 print("❌ click ไม่ได้:", e)
@@ -151,8 +152,6 @@ def redeem_angpao(link):
             # 🔥 WAIT INPUT
             # =========================
             try:
-                page.wait_for_selector("input", timeout=15000)
-
                 inputs = page.locator("input")
                 if inputs.count() == 0:
                     return {"success": False, "error": "no_input"}
