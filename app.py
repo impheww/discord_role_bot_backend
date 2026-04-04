@@ -172,53 +172,47 @@ def redeem_angpao(link):
                 return {"success": False, "error": "no_input"}
 
             # =========================
-            # 🔘 CONFIRM (เวอร์ชันเทพ)
+            # 🔘 CONFIRM (NO EXCEPT VERSION)
             # =========================
-            try:
-                # 🔥 รอให้ UI เปลี่ยนหลังกรอกเบอร์
-                page.wait_for_selector("input", timeout=10000)
-                page.wait_for_timeout(1500)
 
-                candidates = page.locator("button, div, span, a")
+            page.wait_for_timeout(2000)
 
-                count = candidates.count()
-                print("🔍 confirm candidates:", count)
+            clicked = False
 
-                clicked = False
+            # 🔥 1. input submit
+            submit_btn = page.locator("input[type=submit]")
+            if submit_btn.count() > 0:
+                if submit_btn.first.is_visible():
+                    submit_btn.first.click()
+                    print("✅ confirm via input submit")
+                    clicked = True
 
-                for i in range(count):
-                    el = candidates.nth(i)
+            # 🔥 2. button enabled
+            if not clicked:
+                buttons = page.locator("button")
+                for i in range(buttons.count()):
+                    btn = buttons.nth(i)
+                    if btn.is_visible() and btn.is_enabled():
+                        btn.click()
+                        print(f"✅ confirm via button {i}")
+                        clicked = True
+                        break
 
-                    text = ""
+            # 🔥 3. div ใหญ่ (fallback)
+            if not clicked:
+                divs = page.locator("div")
+                for i in range(divs.count()):
+                    el = divs.nth(i)
+
                     if el.is_visible():
-                        raw = el.text_content()
-                        if raw:
-                            text = raw.lower()
-
-                    if any(k in text for k in ["ยืนยัน", "รับเงิน", "continue", "ตกลง", "next"]):
-                        try:
-                            el.click(timeout=3000)
-                            print(f"✅ confirm คลิกตัวที่ {i} | text={text}")
+                        box = el.bounding_box()
+                        if box and box["width"] > 100 and box["height"] > 40:
+                            el.click()
+                            print(f"⚠️ confirm via div {i}")
                             clicked = True
                             break
-                        except Exception as e:
-                            print("❌ confirm click fail:", e)
 
-                # 🔥 fallback กันพลาด
-                if not clicked:
-                    print("⚠️ ไม่เจอ confirm → fallback")
-                    try:
-                        page.locator("button").first.click()
-                        print("⚠️ fallback: กดปุ่มแรก")
-                        clicked = True
-                    except Exception as e:
-                        print("❌ fallback fail:", e)
-
-                if not clicked:
-                    return {"success": False, "error": "no_confirm"}
-
-            except Exception as e:
-                print("⚠️ confirm error:", e)
+            if not clicked:
                 return {"success": False, "error": "no_confirm"}
 
             # =========================
