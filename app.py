@@ -95,6 +95,9 @@ def redeem_angpao(link):
             print("🔥 OPEN")
             page.goto(link, wait_until="domcontentloaded", timeout=30000)
 
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(2000)
+
             page.wait_for_timeout(3000)
 
             # =========================
@@ -109,11 +112,36 @@ def redeem_angpao(link):
             # 🔥 CLICK ปุ่มรับ
             # =========================
             try:
-                btn = page.get_by_role("button").filter(
-                    has_text=re.compile("รับ|ซอง|open|gift", re.I)
-                ).first
+                page.wait_for_timeout(4000)
 
-                btn.click(timeout=5000)
+                candidates = page.locator("button, div, span, a")
+
+                count = candidates.count()
+                print("🔍 clickable:", count)
+
+                clicked = False
+
+                for i in range(count):
+                    el = candidates.nth(i)
+
+                    text = ""
+                    if el.is_visible():
+                        raw = el.text_content()
+                        if raw:
+                            text = raw.lower()
+
+                    if any(k in text for k in ["รับ", "ซอง", "open", "gift"]):
+                        try:
+                            el.click(timeout=2000)
+                            print(f"✅ คลิกตัวที่ {i} | text={text}")
+                            clicked = True
+                            break
+                        except Exception as e:
+                            print("❌ click fail:", e)
+
+                if not clicked:
+                    print("❌ ไม่เจอปุ่มรับซองจริงๆ")
+                    return {"success": False, "error": "no_button"}
                 print("✅ clicked รับซอง")
 
             except Exception as e:
