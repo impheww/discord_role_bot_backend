@@ -216,27 +216,42 @@ def redeem_angpao(link):
                 return {"success": False, "error": "no_confirm"}
 
             # =========================
-            # 🔥 WAIT RESULT
+            # 🔥 WAIT RESULT (SMART)
             # =========================
-            try:
-                page.wait_for_timeout(5000)
 
-                content = page.inner_text("body")
+            page.wait_for_timeout(5000)
 
-                if "สำเร็จ" in content:
-                    return {"success": True, "amount": 0}
+            content = page.content().lower()
 
-                if "หมดอายุ" in content:
-                    return {"success": False, "error": "expired"}
+            print("📄 PAGE CONTENT LENGTH:", len(content))
 
-                if "ใช้ไปแล้ว" in content:
-                    return {"success": False, "error": "already_used"}
+            # 🔥 ครอบทุกคำที่เป็นไปได้
+            if any(k in content for k in [
+                "สำเร็จ",
+                "เรียบร้อย",
+                "you have received",
+                "received",
+                "success"
+            ]):
+                return {"success": True, "amount": 0}
 
-                return {"success": False, "error": "unknown"}
+            elif any(k in content for k in [
+                "หมดอายุ",
+                "expired"
+            ]):
+                return {"success": False, "error": "expired"}
 
-            except Exception as e:
-                print("❌ result error:", e)
-                return {"success": False, "error": "timeout"}
+            elif any(k in content for k in [
+                "ใช้ไปแล้ว",
+                "redeemed"
+            ]):
+                return {"success": False, "error": "already_used"}
+
+            # 🔥 debug เพิ่ม (สำคัญ)
+            print("⚠️ UNKNOWN CONTENT SNIPPET:")
+            print(content[:1000])
+
+            return {"success": False, "error": "unknown"}
 
     except Exception as e:
         print("💀 error:", e)
