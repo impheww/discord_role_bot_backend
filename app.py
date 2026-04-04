@@ -2,7 +2,6 @@ import os
 from flask import Flask, request, jsonify
 import requests
 from threading import Lock
-import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import ViewportSize
 # ============= LINK PATTERN ==============
@@ -173,18 +172,53 @@ def redeem_angpao(link):
                 return {"success": False, "error": "no_input"}
 
             # =========================
-            # 🔘 CONFIRM
+            # 🔘 CONFIRM (เวอร์ชันเทพ)
             # =========================
             try:
-                confirm = page.get_by_role("button").filter(
-                    has_text=re.compile("ยืนยัน|รับเงิน|continue|ตกลง", re.I)
-                ).first
+                # 🔥 รอให้ UI เปลี่ยนหลังกรอกเบอร์
+                page.wait_for_selector("input", timeout=10000)
+                page.wait_for_timeout(1500)
 
-                confirm.click(timeout=5000)
-                print("✅ confirm แล้ว")
+                candidates = page.locator("button, div, span, a")
+
+                count = candidates.count()
+                print("🔍 confirm candidates:", count)
+
+                clicked = False
+
+                for i in range(count):
+                    el = candidates.nth(i)
+
+                    text = ""
+                    if el.is_visible():
+                        raw = el.text_content()
+                        if raw:
+                            text = raw.lower()
+
+                    if any(k in text for k in ["ยืนยัน", "รับเงิน", "continue", "ตกลง", "next"]):
+                        try:
+                            el.click(timeout=3000)
+                            print(f"✅ confirm คลิกตัวที่ {i} | text={text}")
+                            clicked = True
+                            break
+                        except Exception as e:
+                            print("❌ confirm click fail:", e)
+
+                # 🔥 fallback กันพลาด
+                if not clicked:
+                    print("⚠️ ไม่เจอ confirm → fallback")
+                    try:
+                        page.locator("button").first.click()
+                        print("⚠️ fallback: กดปุ่มแรก")
+                        clicked = True
+                    except Exception as e:
+                        print("❌ fallback fail:", e)
+
+                if not clicked:
+                    return {"success": False, "error": "no_confirm"}
 
             except Exception as e:
-                print("⚠️ confirm fail:", e)
+                print("⚠️ confirm error:", e)
                 return {"success": False, "error": "no_confirm"}
 
             # =========================
