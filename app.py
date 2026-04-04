@@ -121,32 +121,46 @@ def redeem_angpao(link):
             # 🔥 CLICK "รับซอง"
             # =========================
             try:
-                # 🔥 รอให้ UI โผล่มาก่อน
                 page.wait_for_timeout(3000)
 
-                # 🔍 debug
-                buttons = page.locator("button")
-                print("🔍 BUTTON COUNT:", buttons.count())
+                # 🔥 หา element ที่เป็น clickable แต่ไม่ใช่ deeplink
+                candidates = page.locator("button, div[role=button], a")
 
-                # 🔥 หาแบบยืดหยุ่น
-                btn = page.get_by_role("button").filter(
-                    has_text=re.compile("รับ|ซอง|gift|open", re.I)
-                ).first
+                count = candidates.count()
+                print("🔍 CLICKABLE COUNT:", count)
 
-                btn.click(timeout=10000)
-                print("✅ คลิกปุ่มรับซองแล้ว")
+                clicked = False
 
-            except PlaywrightTimeoutError:
-                print("❌ หา button ไม่เจอ → fallback")
+                for i in range(count):
+                    el = candidates.nth(i)
 
-                # 🔥 fallback 1: กดปุ่มแรก
-                try:
-                    page.locator("button").first.click()
-                    print("⚠️ fallback: กดปุ่มแรก")
-                except Exception as e:
-                    print("💀 fallback ก็พัง:", e)
+                    try:
+                        text = el.inner_text().lower()
+                    except Exception as e:
+                        print("❌ error:", e)
+                        text = ""
+
+                    href = el.get_attribute("href")
+
+                    print(f"👉 [{i}] text={text} href={href}")
+
+                    # ❌ ข้าม deeplink
+                    if href and "tmn.app.link" in href:
+                        continue
+
+                    # ✅ เอาที่มี keyword นี้
+                    if any(k in text for k in ["รับ", "ซอง", "gift", "open"]):
+                        el.click(timeout=3000)
+                        print(f"✅ คลิกตัวที่ {i}")
+                        clicked = True
+                        break
+
+                if not clicked:
                     return {"success": False, "error": "no_button"}
 
+            except Exception as e:
+                print("❌ click error:", e)
+                return {"success": False, "error": "no_button"}
             # =========================
             # 🔥 WAIT INPUT (สำคัญสุด)
             # =========================
@@ -274,7 +288,7 @@ def redeem_angpao(link):
                     return {"success": False, "error": "timeout"}
 
     except Exception as e:
-        print("ERROR:", e)
+        print("💀 unexpected error:", e)
         return {"success": False, "error": "exception"}
 # ================= API =================
 @app.route("/redeem", methods=["POST"])
