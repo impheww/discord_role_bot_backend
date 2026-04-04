@@ -2,6 +2,9 @@ import os
 from flask import Flask, request, jsonify
 import requests
 from threading import Lock
+import re
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import ViewportSize
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
     link = link.strip().replace("<", "").replace(">", "")
@@ -62,68 +65,125 @@ def check_angpao(link):
 # ================= REDEEM =================
 def redeem_angpao(link):
     try:
-        voucher_id = extract_code(link)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                ]
+            )
 
-        if not voucher_id:
-            return {"success": False, "error": "invalid"}
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                viewport=ViewportSize(width=390, height=844),
+                is_mobile=True,
+                has_touch=True,
+                locale="th-TH"
+            )
 
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0",
-            "Origin": "https://gift.truemoney.com",
-            "Referer": link
-        }
+            # 🔥 stealth
+            context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'languages', { get: () => ['th-TH','th'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3] });
+            """)
 
-        # =========================
-        # 🔍 VERIFY
-        # =========================
-        verify_url = f"https://gift.truemoney.com/campaign/vouchers/{voucher_id}/verify"
+            page = context.new_page()
 
-        r = requests.post(
-            verify_url,
-            json={"mobile": WALLET_PHONE},
-            headers=headers,
-            timeout=10
-        )
+            print("🔥 OPEN")
+            page.goto(link, wait_until="domcontentloaded", timeout=30000)
 
-        print("🔍 VERIFY:", r.status_code, r.text)
+            page.wait_for_timeout(3000)
 
-        # =========================
-        # 🔥 REDEEM
-        # =========================
-        redeem_url = f"https://gift.truemoney.com/campaign/vouchers/{voucher_id}/redeem"
+            # =========================
+            # 🔥 HUMAN BEHAVIOR
+            # =========================
+            page.mouse.move(200, 400)
+            page.wait_for_timeout(500)
+            page.mouse.wheel(0, 500)
+            page.wait_for_timeout(1000)
 
-        r = requests.post(
-            redeem_url,
-            json={"mobile": WALLET_PHONE},
-            headers=headers,
-            timeout=15
-        )
+            # =========================
+            # 🔥 CLICK ปุ่มรับ
+            # =========================
+            try:
+                btn = page.get_by_role("button").filter(
+                    has_text=re.compile("รับ|ซอง|open|gift", re.I)
+                ).first
 
-        print("🔥 REDEEM:", r.status_code, r.text)
+                btn.click(timeout=5000)
+                print("✅ clicked รับซอง")
 
-        data = r.json()
+            except Exception as e:
+                print("❌ click ไม่ได้:", e)
+                return {"success": False, "error": "no_button"}
 
-        status = data.get("status", {}).get("code", "")
-        voucher = data.get("data", {}).get("voucher", {})
+            # =========================
+            # 🔥 WAIT INPUT
+            # =========================
+            try:
+                page.wait_for_selector("input", timeout=15000)
 
-        if status == "SUCCESS" and voucher.get("status") == "REDEEMED":
-            return {
-                "success": True,
-                "amount": float(voucher.get("amount_baht", 0))
-            }
+                inputs = page.locator("input")
+                if inputs.count() == 0:
+                    return {"success": False, "error": "no_input"}
 
-        elif voucher.get("status") == "EXPIRED":
-            return {"success": False, "error": "expired"}
+                phone_input = inputs.first
+                phone_input.click()
+                page.wait_for_timeout(300)
 
-        elif voucher.get("status") == "REDEEMED":
-            return {"success": False, "error": "already_used"}
+                # 👇 พิมพ์แบบมนุษย์
+                for digit in WALLET_PHONE:
+                    phone_input.type(digit, delay=120)
 
-        else:
-            return {"success": False, "error": "failed"}
+                print("📱 ใส่เบอร์แล้ว")
+
+            except PlaywrightTimeoutError:
+                print("❌ input ไม่มา")
+                return {"success": False, "error": "no_input"}
+
+            # =========================
+            # 🔘 CONFIRM
+            # =========================
+            try:
+                confirm = page.get_by_role("button").filter(
+                    has_text=re.compile("ยืนยัน|รับเงิน|continue|ตกลง", re.I)
+                ).first
+
+                confirm.click(timeout=5000)
+                print("✅ confirm แล้ว")
+
+            except Exception as e:
+                print("⚠️ confirm fail:", e)
+                return {"success": False, "error": "no_confirm"}
+
+            # =========================
+            # 🔥 WAIT RESULT
+            # =========================
+            try:
+                page.wait_for_timeout(5000)
+
+                content = page.inner_text("body")
+
+                if "สำเร็จ" in content:
+                    return {"success": True, "amount": 0}
+
+                if "หมดอายุ" in content:
+                    return {"success": False, "error": "expired"}
+
+                if "ใช้ไปแล้ว" in content:
+                    return {"success": False, "error": "already_used"}
+
+                return {"success": False, "error": "unknown"}
+
+            except Exception as e:
+                print("❌ result error:", e)
+                return {"success": False, "error": "timeout"}
 
     except Exception as e:
-        print("💀 API ERROR:", e)
+        print("💀 error:", e)
         return {"success": False, "error": "exception"}
 # ================= API =================
 @app.route("/redeem", methods=["POST"])
