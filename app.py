@@ -68,11 +68,11 @@ def redeem_angpao(link):
 
         with sync_playwright() as p:
             browser = p.chromium.launch(
-                headless=False,
-                slow_mo=200,
+                headless=True,  # 🔥 ต้องเป็น true บน Render
                 args=[
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
                 ]
             )
 
@@ -83,6 +83,13 @@ def redeem_angpao(link):
                 has_touch=True,
                 locale="th-TH"
             )
+
+            # 🔥 หลอกว่าไม่ใช่ bot
+            context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            """)
 
             page = context.new_page()
 
