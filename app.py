@@ -68,11 +68,13 @@ def redeem_angpao(link):
 
         with sync_playwright() as p:
             browser = p.chromium.launch(
-                headless=True,  # 🔥 ต้องเป็น true บน Render
+                headless=True,
                 args=[
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                    "--window-size=390,844",
                 ]
             )
 
@@ -88,6 +90,18 @@ def redeem_angpao(link):
             context.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
+            });
+
+            window.chrome = {
+                runtime: {}
+            };
+
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3],
+            });
+
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['th-TH', 'th'],
             });
             """)
 
@@ -107,7 +121,7 @@ def redeem_angpao(link):
             # 🔥 CLICK "รับซอง"
             # =========================
             try:
-                page.get_by_text("รับซอง").first.click(timeout=10000)
+                page.get_by_role("button", name=re.compile("รับซอง", re.I)).click(timeout=10000)
                 print("✅ คลิกปุ่มรับซองแล้ว")
             except PlaywrightTimeoutError:
                 return {"success": False, "error": "no_button"}
@@ -116,13 +130,14 @@ def redeem_angpao(link):
             # 🔥 WAIT INPUT (สำคัญสุด)
             # =========================
             try:
-                page.wait_for_function("""
-                () => {
-                    return document.querySelectorAll('input').length > 0;
-                }
-                """, timeout=10000)
+                # 🔥 รอ input แบบยืดหยุ่น (ดีกว่า wait_for_function)
+                page.wait_for_selector("input", timeout=10000)
 
-                page.wait_for_timeout(1000)
+                # 👇 เพิ่ม human behavior กัน detect
+                page.mouse.move(100, 200)
+                page.wait_for_timeout(500)
+                page.mouse.wheel(0, 300)
+                page.wait_for_timeout(800)
 
                 inputs = page.locator("input")
                 count = inputs.count()
@@ -132,13 +147,16 @@ def redeem_angpao(link):
                     return {"success": False, "error": "no_input"}
 
                 phone_input = inputs.first
+
                 phone_input.click()
+                page.wait_for_timeout(300)
+
                 phone_input.fill(WALLET_PHONE)
 
                 print("📱 กรอกเบอร์แล้ว:", WALLET_PHONE)
 
             except PlaywrightTimeoutError:
-                print("❌ input ไม่มา")
+                print("❌ input ไม่มา (timeout)")
                 return {"success": False, "error": "no_input"}
 
             # =========================
