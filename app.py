@@ -2,7 +2,7 @@ import os
 from flask import Flask, request, jsonify
 import requests
 from threading import Lock
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 from playwright.sync_api import ViewportSize
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
@@ -95,64 +95,45 @@ def redeem_angpao(link):
             page.goto(link, wait_until="domcontentloaded", timeout=30000)
 
             page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
-
             page.wait_for_timeout(3000)
 
             # =========================
-            # 🔥 HUMAN BEHAVIOR
-            # =========================
-            page.mouse.move(200, 400)
-            page.wait_for_timeout(500)
-            page.mouse.wheel(0, 500)
-            page.wait_for_timeout(1000)
-
-            # =========================
-            # 🔥 CLICK ปุ่มรับ
+            # 🔥 CLICK "รับซอง"
             # =========================
             try:
-                page.wait_for_timeout(4000)
+                open_btn = None
+                buttons = page.get_by_role("button")
 
-                candidates = page.locator("button, div, span, a")
+                for i in range(buttons.count()):
+                    btn = buttons.nth(i)
+                    text = (btn.text_content() or "").strip()
 
-                count = candidates.count()
-                print("🔍 clickable:", count)
-
-                clicked = False
-
-                for i in range(count):
-                    el = candidates.nth(i)
-
-                    text = ""
-                    if el.is_visible():
-                        raw = el.text_content()
-                        if raw:
-                            text = raw.lower()
-
-                    if any(k in text for k in ["รับ", "ซอง", "open", "gift"]):
-                        try:
-                            el.click(timeout=2000)
-                            print(f"✅ คลิกตัวที่ {i} | text={text}")
-                            clicked = True
+                    if any(k in text for k in ["รับซอง", "open", "gift"]):
+                        if btn.is_visible():
+                            open_btn = btn
+                            print(f"🎯 FOUND OPEN BUTTON: {text}")
                             break
-                        except Exception as e:
-                            print("❌ click fail:", e)
 
-                if not clicked:
-                    print("❌ ไม่เจอปุ่มรับซองจริงๆ")
+                if not open_btn:
+                    print("❌ ไม่เจอปุ่มรับซอง")
                     return {"success": False, "error": "no_button"}
+
+                open_btn.click(delay=100)
                 print("✅ clicked รับซอง")
+
+                # 🔥 ต้องมี input โผล่ = เข้า flow แล้ว
                 page.wait_for_selector("input", timeout=15000)
 
             except Exception as e:
-                print("❌ click ไม่ได้:", e)
+                print("❌ click รับซองไม่ได้:", e)
                 return {"success": False, "error": "no_button"}
 
             # =========================
-            # 🔥 WAIT INPUT
+            # 📱 ใส่เบอร์
             # =========================
             try:
                 inputs = page.locator("input")
+
                 if inputs.count() == 0:
                     return {"success": False, "error": "no_input"}
 
@@ -160,86 +141,82 @@ def redeem_angpao(link):
                 phone_input.click()
                 page.wait_for_timeout(300)
 
-                # 👇 พิมพ์แบบมนุษย์
                 for digit in WALLET_PHONE:
                     phone_input.type(digit, delay=120)
 
                 print("📱 ใส่เบอร์แล้ว")
 
-            except PlaywrightTimeoutError:
-                print("❌ input ไม่มา")
+            except Exception as e:
+                print("❌ input error:", e)
                 return {"success": False, "error": "no_input"}
 
             # =========================
-            # 🔘 CONFIRM (NO EXCEPT VERSION)
+            # 🔘 CLICK CONFIRM (FIX)
             # =========================
+            try:
+                page.wait_for_timeout(1500)
 
-            page.wait_for_timeout(2000)
+                confirm_btn = None
+                buttons = page.get_by_role("button")
 
-            clicked = False
-
-            # 🔥 1. input submit
-            submit_btn = page.locator("input[type=submit]")
-            if submit_btn.count() > 0:
-                if submit_btn.first.is_visible():
-                    submit_btn.first.click()
-                    print("✅ confirm via input submit")
-                    clicked = True
-
-            # 🔥 2. button enabled
-            if not clicked:
-                buttons = page.locator("button")
                 for i in range(buttons.count()):
                     btn = buttons.nth(i)
-                    text = btn.text_content() or ""
+                    text = (btn.text_content() or "").strip()
 
-                    # ❌ ห้ามกดปุ่มเดิม
-                    if "รับซอง" in text:
-                        continue
-
-                    # ✅ เอาเฉพาะ confirm
-                    if any(k in text.lower() for k in ["ยืนยัน", "รับเงิน", "continue", "ตกลง"]):
+                    if any(k in text for k in ["ยืนยัน", "รับเงิน", "ตกลง"]):
                         if btn.is_visible() and btn.is_enabled():
-                            btn.click()
-                            print(f"✅ confirm via button {i} | text={text}")
-                            clicked = True
+                            confirm_btn = btn
+                            print(f"🎯 FOUND CONFIRM: {text}")
                             break
 
-            # 🔥 3. div ใหญ่ (fallback)
-            if not clicked:
-                divs = page.locator("div")
-                for i in range(divs.count()):
-                    el = divs.nth(i)
+                if not confirm_btn:
+                    print("❌ ไม่เจอปุ่ม confirm จริง")
+                    return {"success": False, "error": "no_confirm"}
 
-                    if el.is_visible():
-                        box = el.bounding_box()
-                        if box and box["width"] > 100 and box["height"] > 40:
-                            text = el.text_content() or ""
-                            if "รับซอง" in text:
-                                continue
-                            el.click()
-                            print(f"⚠️ confirm via div {i}")
-                            clicked = True
-                            break
+                # 🔥 monitor request (สำคัญ)
+                try:
+                    with page.expect_response(lambda r: "redeem" in r.url or "campaign" in r.url, timeout=10000):
+                        confirm_btn.click(delay=100)
+                        print("✅ clicked confirm + detected request")
+                except Exception as e:
+                    print("❌ ERROR:", e)
+                    confirm_btn.click(delay=100)
+                    print("⚠️ clicked confirm (no request detected)")
 
-            if not clicked:
+            except Exception as e:
+                print("❌ confirm error:", e)
                 return {"success": False, "error": "no_confirm"}
 
             # =========================
-            # 🔥 WAIT RESULT (REAL FIX)
+            # 🔥 WAIT RESULT (REAL)
             # =========================
-
             try:
-                # 🔥 รอ UI เปลี่ยน (สำคัญสุด)
                 page.wait_for_timeout(3000)
 
-                # 🔍 เอา text จากหน้าจริง (render แล้ว)
+                # 🔥 รอ UI เปลี่ยนจริง
+                try:
+                    page.wait_for_function("""
+                    () => {
+                        const body = document.body.innerText;
+                        return !body.includes('กรอกเบอร์โทรศัพท์');
+                    }
+                    """, timeout=8000)
+                except Exception as e:
+                    print("⚠️ UI ไม่เปลี่ยน:", e)
+
                 content = page.inner_text("body").lower()
 
                 print("📄 TEXT LENGTH:", len(content))
-                print("📄 TEXT SAMPLE:", content[:500])
+                print("📄 TEXT SAMPLE:", content[:400])
 
-                # 🔥 success (ของจริง)
+                # 📸 debug screenshot
+                try:
+                    page.screenshot(path="debug_after_confirm.png")
+                except Exception as e:
+                    print("❌ ERROR:", e)
+                    pass
+
+                # ✅ SUCCESS
                 if any(k in content for k in [
                     "รับเงินสำเร็จ",
                     "คุณได้รับเงิน",
@@ -248,24 +225,24 @@ def redeem_angpao(link):
                 ]):
                     return {"success": True, "amount": 0}
 
-                # 🔥 กรอกเบอร์ผิด / ซ้ำ
+                # ❌ USED
                 if any(k in content for k in [
-                    "เบอร์นี้",
                     "already",
                     "used",
+                    "เบอร์นี้"
                 ]):
                     return {"success": False, "error": "already_used"}
 
-                # 🔥 หมดอายุ
+                # ❌ EXPIRED
                 if any(k in content for k in [
                     "หมดอายุ",
                     "expired"
                 ]):
                     return {"success": False, "error": "expired"}
 
-                # 🔥 ยังอยู่หน้าเดิม = confirm ไม่ทำงานจริง
+                # ❌ STILL SAME PAGE
                 if "กรอกเบอร์โทรศัพท์" in content:
-                    print("⚠️ ยังอยู่หน้าเดิม → confirm ไม่สำเร็จจริง")
+                    print("⚠️ ยังอยู่หน้าเดิม → confirm ไม่ทำงาน")
                     return {"success": False, "error": "confirm_not_work"}
 
                 return {"success": False, "error": "unknown"}
