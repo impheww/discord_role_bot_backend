@@ -151,37 +151,72 @@ def redeem_angpao(link):
                 return {"success": False, "error": "no_input"}
 
             # =========================
-            # 🔘 CLICK CONFIRM (FIX)
+            # 🔘 CONFIRM (FINAL FIX)
             # =========================
             try:
                 page.wait_for_timeout(1500)
 
                 confirm_btn = None
-                buttons = page.get_by_role("button")
 
-                for i in range(buttons.count()):
-                    btn = buttons.nth(i)
-                    text = (btn.text_content() or "").strip()
+                # 🔥 1. ลองกด Enter ก่อน (สำคัญมาก)
+                try:
+                    phone_input.press("Enter")
+                    print("⌨️ press Enter")
+                    page.wait_for_timeout(2000)
+                except Exception as e:
+                    print("⚠️ Enter fail:", e)
+
+                # 🔥 2. หา button + role=button
+                candidates = page.locator("button, div[role=button]")
+
+                for i in range(candidates.count()):
+                    el = candidates.nth(i)
+
+                    if not el.is_visible():
+                        continue
+
+                    text = (el.text_content() or "").strip()
 
                     if any(k in text for k in ["ยืนยัน", "รับเงิน", "ตกลง"]):
-                        if btn.is_visible() and btn.is_enabled():
-                            confirm_btn = btn
-                            print(f"🎯 FOUND CONFIRM: {text}")
+                        confirm_btn = el
+                        print(f"🎯 FOUND CONFIRM: {text}")
+                        break
+
+                # 🔥 3. fallback: หา element ใหญ่ (เผื่อไม่มี text)
+                if not confirm_btn:
+                    print("⚠️ fallback scan...")
+
+                    candidates = page.locator("div, button")
+
+                    for i in range(candidates.count()):
+                        el = candidates.nth(i)
+
+                        if not el.is_visible():
+                            continue
+
+                        box = el.bounding_box()
+                        if not box:
+                            continue
+
+                        if box["width"] > 150 and box["height"] > 40:
+                            confirm_btn = el
+                            print(f"⚠️ fallback confirm index={i}")
                             break
 
+                # ❌ ยังไม่เจอจริง
                 if not confirm_btn:
                     print("❌ ไม่เจอปุ่ม confirm จริง")
                     return {"success": False, "error": "no_confirm"}
 
-                # 🔥 monitor request (สำคัญ)
+                # 🔥 CLICK + monitor request
                 try:
                     with page.expect_response(lambda r: "redeem" in r.url or "campaign" in r.url, timeout=10000):
                         confirm_btn.click(delay=100)
-                        print("✅ clicked confirm + detected request")
+                        print("✅ clicked confirm + request detected")
                 except Exception as e:
-                    print("❌ ERROR:", e)
+                    print("⚠️ no request detected:", e)
                     confirm_btn.click(delay=100)
-                    print("⚠️ clicked confirm (no request detected)")
+                    print("⚠️ clicked confirm fallback")
 
             except Exception as e:
                 print("❌ confirm error:", e)
