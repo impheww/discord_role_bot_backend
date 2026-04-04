@@ -2,8 +2,8 @@ import os
 from flask import Flask, request, jsonify
 import requests
 from threading import Lock
+import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import Error as PlaywrightError
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
     link = link.strip().replace("<", "").replace(">", "")
@@ -64,83 +64,100 @@ def check_angpao(link):
 # ================= REDEEM =================
 def redeem_angpao(link):
     try:
+
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"]
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                ]
             )
 
-            page = browser.new_page(
+            context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
             )
 
-            # 🔥 debug network (fix warning ด้วย type ignore)
+            page = context.new_page()
+
+            # debug network
             page.on("response", lambda r: print("📡", getattr(r, "status", "?"), r.url))  # type: ignore
 
             print("🔥 OPEN LINK")
             page.goto(link, wait_until="domcontentloaded", timeout=20000)
-            page.wait_for_selector("body", timeout=10000)
 
-            # 🔍 หา "รับซอง"
+            # กัน React โหลดไม่ทัน
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(1500)
+
+            # =========================
+            # 🔥 CLICK "รับซอง"
+            # =========================
             try:
-                page.locator("text=รับซอง").first.click(timeout=10000)
+                page.get_by_text("รับซอง").first.click(timeout=10000)
                 print("✅ คลิกปุ่มรับซองแล้ว")
-                # 🔥 กรอกเบอร์โทร
-                try:
-                    phone_input = page.wait_for_selector("input[type='tel']", timeout=5000)
-                    phone_input.fill(WALLET_PHONE)
-                    print("📱 กรอกเบอร์แล้ว:", WALLET_PHONE)
-                except PlaywrightError:
-                    print("❌ ไม่พบช่องกรอกเบอร์")
-                    return {"success": False, "error": "no_input"}
             except PlaywrightTimeoutError:
-                print("❌ หา 'รับซอง' ไม่เจอ")
                 return {"success": False, "error": "no_button"}
 
-            # ✅ รอ input
+            # =========================
+            # 🔥 WAIT INPUT (สำคัญสุด)
+            # =========================
             try:
-                page.wait_for_selector("input", timeout=10000)
+                page.wait_for_function("""
+                () => {
+                    return document.querySelectorAll('input').length > 0;
+                }
+                """, timeout=10000)
+
+                page.wait_for_timeout(1000)
+
+                inputs = page.locator("input")
+                count = inputs.count()
+                print("🔍 INPUT COUNT:", count)
+
+                if count == 0:
+                    return {"success": False, "error": "no_input"}
+
+                phone_input = inputs.first
+                phone_input.click()
+                phone_input.fill(WALLET_PHONE)
+
+                print("📱 กรอกเบอร์แล้ว:", WALLET_PHONE)
+
             except PlaywrightTimeoutError:
+                print("❌ input ไม่มา")
                 return {"success": False, "error": "no_input"}
 
-            print("🔥 FILL PHONE")
-            page.fill("input", WALLET_PHONE)
-
-            # 🔘 กดยืนยัน
-            buttons = page.query_selector_all("button")
-
+            # =========================
+            # 🔘 CLICK CONFIRM
+            # =========================
             confirm_clicked = False
 
-            for btn in buttons:
-                try:
-                    text = btn.inner_text().strip()
-                    print("🔍 BUTTON:", text)
+            try:
+                btn = page.get_by_role("button").filter(
+                    has_text=re.compile("ยืนยัน|รับเงิน|ตกลง|continue|ถัดไป", re.I)
+                ).first
 
-                    if any(word in text for word in [
-                        "รับเงิน", "ยืนยัน", "ตกลง", "ถัดไป", "continue", "รับซอง"
-                    ]):
-                        btn.click()
-                        print("✅ กดยืนยันแล้ว:", text)
-                        confirm_clicked = True
-                        break
-                except PlaywrightError:
-                    continue
+                btn.click(timeout=5000)
+                confirm_clicked = True
+                print("✅ กดยืนยันแล้ว")
+
+            except Exception as e:
+                print("⚠️ confirm click error:", e)
 
             if not confirm_clicked:
                 try:
-                    buttons[0].click()
-                    print("✅ fallback: กดปุ่มแรก")
-                except PlaywrightError:
+                    page.locator("button").first.click()
+                    print("⚠️ fallback กดปุ่มแรก")
+                except Exception as e:
+                    print("❌ fallback click error:", e)
                     return {"success": False, "error": "no_confirm"}
 
-            # 🔥 กัน race condition
-            page.wait_for_timeout(1000)
-
-            # =====================================
-            # 🔥 ดัก network response
-            # =====================================
+            # =========================
+            # 🔥 WAIT API RESPONSE
+            # =========================
             try:
-                print("⏳ รอ network response...")
+                print("⏳ รอ API...")
 
                 with page.expect_response(
                     lambda r: (
@@ -176,7 +193,6 @@ def redeem_angpao(link):
             except PlaywrightTimeoutError:
                 print("⚠️ API timeout → fallback DOM")
 
-                # 🔥 fallback DOM
                 try:
                     page.wait_for_function("""
                         () => {
@@ -201,11 +217,9 @@ def redeem_angpao(link):
                     else:
                         return {"success": False, "error": "unknown"}
 
-                except PlaywrightError:
+                except Exception as e:
+                    print("⏰ timeout error:", e)
                     return {"success": False, "error": "timeout"}
-
-    except PlaywrightTimeoutError:
-        return {"success": False, "error": "timeout"}
 
     except Exception as e:
         print("ERROR:", e)
