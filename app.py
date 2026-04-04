@@ -194,7 +194,7 @@ def redeem_angpao(link):
                     btn = buttons.nth(i)
                     if btn.is_visible() and btn.is_enabled():
                         btn.click()
-                        print(f"✅ confirm via button {i}")
+                        print(f"✅ confirm via button {i} | text={btn.text_content()}")
                         clicked = True
                         break
 
@@ -216,42 +216,53 @@ def redeem_angpao(link):
                 return {"success": False, "error": "no_confirm"}
 
             # =========================
-            # 🔥 WAIT RESULT (SMART)
+            # 🔥 WAIT RESULT (REAL FIX)
             # =========================
 
-            page.wait_for_timeout(5000)
+            try:
+                # 🔥 รอ UI เปลี่ยน (สำคัญสุด)
+                page.wait_for_timeout(3000)
 
-            content = page.content().lower()
+                # 🔍 เอา text จากหน้าจริง (render แล้ว)
+                content = page.inner_text("body").lower()
 
-            print("📄 PAGE CONTENT LENGTH:", len(content))
+                print("📄 TEXT LENGTH:", len(content))
+                print("📄 TEXT SAMPLE:", content[:500])
 
-            # 🔥 ครอบทุกคำที่เป็นไปได้
-            if any(k in content for k in [
-                "สำเร็จ",
-                "เรียบร้อย",
-                "you have received",
-                "received",
-                "success"
-            ]):
-                return {"success": True, "amount": 0}
+                # 🔥 success (ของจริง)
+                if any(k in content for k in [
+                    "รับเงินสำเร็จ",
+                    "คุณได้รับเงิน",
+                    "ได้รับเงิน",
+                    "successfully",
+                ]):
+                    return {"success": True, "amount": 0}
 
-            elif any(k in content for k in [
-                "หมดอายุ",
-                "expired"
-            ]):
-                return {"success": False, "error": "expired"}
+                # 🔥 กรอกเบอร์ผิด / ซ้ำ
+                if any(k in content for k in [
+                    "เบอร์นี้",
+                    "already",
+                    "used",
+                ]):
+                    return {"success": False, "error": "already_used"}
 
-            elif any(k in content for k in [
-                "ใช้ไปแล้ว",
-                "redeemed"
-            ]):
-                return {"success": False, "error": "already_used"}
+                # 🔥 หมดอายุ
+                if any(k in content for k in [
+                    "หมดอายุ",
+                    "expired"
+                ]):
+                    return {"success": False, "error": "expired"}
 
-            # 🔥 debug เพิ่ม (สำคัญ)
-            print("⚠️ UNKNOWN CONTENT SNIPPET:")
-            print(content[:1000])
+                # 🔥 ยังอยู่หน้าเดิม = confirm ไม่ทำงานจริง
+                if "กรอกเบอร์โทรศัพท์" in content:
+                    print("⚠️ ยังอยู่หน้าเดิม → confirm ไม่สำเร็จจริง")
+                    return {"success": False, "error": "confirm_not_work"}
 
-            return {"success": False, "error": "unknown"}
+                return {"success": False, "error": "unknown"}
+
+            except Exception as e:
+                print("❌ result error:", e)
+                return {"success": False, "error": "timeout"}
 
     except Exception as e:
         print("💀 error:", e)
