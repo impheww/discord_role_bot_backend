@@ -4,6 +4,7 @@ import requests
 from threading import Lock
 import re
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import ViewportSize
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
     link = link.strip().replace("<", "").replace(">", "")
@@ -67,7 +68,8 @@ def redeem_angpao(link):
 
         with sync_playwright() as p:
             browser = p.chromium.launch(
-                headless=True,
+                headless=False,
+                slow_mo=200,
                 args=[
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
@@ -75,7 +77,11 @@ def redeem_angpao(link):
             )
 
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                viewport=ViewportSize(width=390, height=844),
+                is_mobile=True,
+                has_touch=True,
+                locale="th-TH"
             )
 
             page = context.new_page()
