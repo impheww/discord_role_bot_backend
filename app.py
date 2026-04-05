@@ -1,66 +1,41 @@
 import os
 from flask import Flask, request, jsonify
-import requests
 from threading import Lock
+import re
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import ViewportSize
+import time
+import logging
 # ============= LINK PATTERN ==============
 def is_valid_truemoney_link(link: str) -> bool:
     link = link.strip().replace("<", "").replace(">", "")
     return "gift.truemoney.com/campaign" in link and "v=" in link
 # ==========================================
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 
+user_last_request = {}
 used_links = set()
 processing_links = set()
 lock = Lock()
 # ================= CONFIG =================
 WALLET_PHONE = "0806084308"  # 🔴 เบอร์ฉัน
-DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1486698291251904552/WljpcJO_TKgt9bjP7BPB8behkAJD2Bv8E99A5sXCd-H0MZvm1CftIJaxuh5ZzJsHnRq_"
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 # ================= UTILS =================
 def extract_code(link):
     if "v=" not in link:
         return None
     return link.split("v=")[-1]
-# ================= CHECK =================
-def check_angpao(link):
-    try:
-        code = extract_code(link)
-        if not code:
-            return {"status": "invalid"}
+# ================= SPAM =================
+def is_spam(user_id):
+    now = time.time()
 
-        url = f"https://gift.truemoney.com/campaign/vouchers/{code}/verify"
+    if user_id in user_last_request:
+        if now - user_last_request[user_id] < 5:
+            return True
 
-        res = requests.get(url, headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json, text/plain, */*",
-            "Referer": "https://gift.truemoney.com/",
-            "Origin": "https://gift.truemoney.com"
-        }, timeout=10)
-
-        print("STATUS CODE:", res.status_code)
-        print("RAW TEXT:", res.text)
-
-        data = res.json()
-        print("TRUEMONEY RESPONSE:", data)
-
-        if data.get("status", {}).get("code") != "SUCCESS":
-            print("⚠️ VERIFY ไม่ SUCCESS แต่จะลอง redeem ต่อ")
-            return {"status": "ok", "amount": 0}
-
-        voucher = data["data"]["voucher"]
-
-        if voucher["status"] == "REDEEMED":
-            return {"status": "used"}
-
-        return {
-            "status": "ok",
-            "amount": float(voucher["amount_baht"])
-        }
-
-    except Exception as e:
-        print("CHECK ERROR:", e)
-        return {"status": "invalid"}
+    user_last_request[user_id] = now
+    return False
 # ================= REDEEM =================
 def redeem_angpao(link):
     try:
@@ -237,7 +212,7 @@ def redeem_angpao(link):
                     }
                     """, timeout=8000)
                 except Exception as e:
-                    print("⚠️ UI ไม่เปลี่ยน:", e)
+                    logging.warning(f"⚠️ UI ไม่เปลี่ยน: {e}")
 
                 content = page.inner_text("body").lower()
 
@@ -258,15 +233,29 @@ def redeem_angpao(link):
                     "ได้รับเงิน",
                     "successfully",
                 ]):
-                    return {"success": True, "amount": 0}
+
+                    # หาเงินจาก text
+                    match = re.search(r'฿\s?([\d,.]+)', content)
+                    amount = 0
+
+                    if match:
+                        amount = float(match.group(1).replace(",", ""))
+
+                    print(f"💰 EXTRACTED AMOUNT: {amount}")
+
+                    return {
+                        "success": True,
+                        "amount": amount
+                    }
 
                 # ❌ USED
                 if any(k in content for k in [
                     "already",
                     "used",
-                    "เบอร์นี้"
+                    "รับไปแล้ว",
+                    "ครบแล้ว"
                 ]):
-                    return {"success": False, "error": "already_used"}
+                    return {"success": False, "error": "used"}
 
                 # ❌ EXPIRED
                 if any(k in content for k in [
@@ -296,17 +285,26 @@ def redeem():
     print("🔥 ได้ data จาก bot:", data)
 
     link = data.get("link")
+    if link:
+        link = link.strip()
+        if not isinstance(link, str):
+            return jsonify({"success": False, "error": "invalid_type"}), 400
     user_id = data.get("user_id")
+    # 🔥 edge: ไม่มี user_id
+    if not user_id:
+        return jsonify({"success": False, "error": "no_user"}), 400
 
     print("👉 link:", link)
     print("👉 user_id:", user_id)
 
-    if not link:
-        return jsonify({"status": "error", "message": "no link"}), 400
+    # 🔥 กัน spam
+    if is_spam(user_id):
+        return jsonify({"success": False, "error": "spam"}), 429
 
     print("🔍 VALID:", is_valid_truemoney_link(link))
     print("🔍 LINK:", link)
 
+    # 🔥 check link
     if not link or not is_valid_truemoney_link(link):
         return jsonify({
             "success": False,
@@ -315,21 +313,23 @@ def redeem():
 
     with lock:
 
-        # ❌ ลิ้งซ้ำ
         if link in used_links:
             return jsonify({"success": False, "error": "used"})
 
-        # ❌ กำลังใช้อยู่ (กัน race)
         if link in processing_links:
             return jsonify({"success": False, "error": "processing"})
 
         processing_links.add(link)
 
     # ===== REDEEM =====
-    redeem_result = redeem_angpao(link)
-
-    with lock:
-        processing_links.discard(link)
+    try:
+        redeem_result = redeem_angpao(link)
+    except Exception as e:
+        logging.error(f"Redeem error: {e}")
+        redeem_result = {"success": False, "error": "server_error"}
+    finally:
+        with lock:
+            processing_links.discard(link)
 
     if redeem_result["success"]:
         amount = redeem_result.get("amount", 0)
@@ -337,13 +337,18 @@ def redeem():
         with lock:
             used_links.add(link)
 
+            # 🔥 limit ขนาด
+            if len(used_links) > 1000:
+                used_links.clear()
+
+        print(f"💰 FINAL AMOUNT SENT: {amount}")
+
         return jsonify({
             "success": True,
             "amount": amount,
             "auto": True
         })
 
-    # fallback
     return jsonify(redeem_result)
 # ================= HOME =================
 @app.route("/")
