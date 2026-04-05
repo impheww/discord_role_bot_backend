@@ -285,10 +285,10 @@ def redeem():
     print("🔥 ได้ data จาก bot:", data)
 
     link = data.get("link")
-    if link:
-        link = link.strip()
-        if not isinstance(link, str):
-            return jsonify({"success": False, "error": "invalid_type"}), 400
+    if not isinstance(link, str):
+        return jsonify({"success": False, "error": "invalid_type"}), 400
+
+    link = link.strip()
     user_id = data.get("user_id")
     # 🔥 edge: ไม่มี user_id
     if not user_id:
@@ -341,7 +341,7 @@ def redeem():
 
             # 🔥 limit ขนาด
             if len(used_links) > 1000:
-                used_links.clear()
+                used_links.pop()
 
         print(f"💰 FINAL AMOUNT SENT: {amount}")
 
