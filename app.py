@@ -313,9 +313,11 @@ def redeem():
 
     with lock:
 
+        # ❌ ลิ้งซ้ำในระบบ (ยังไม่ต้องไปยิง API)
         if link in used_links:
-            return jsonify({"success": False, "error": "used"})
+            return jsonify({"success": False, "error": "duplicate"})
 
+        # ❌ กำลังใช้อยู่ (กันคนกดพร้อมกัน)
         if link in processing_links:
             return jsonify({"success": False, "error": "processing"})
 
